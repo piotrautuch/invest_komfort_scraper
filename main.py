@@ -5,15 +5,17 @@ from bs4 import BeautifulSoup
 import re
 
 
-def get_page_content(location, neighb):
+def get_page_content(location: str, neighb: str):
+    """Retrieves contents from a page from the Invest Komfort site based on the location (city) and neighbourhood"""
     results = requests.get(f"https://www.investkomfort.pl/mieszkania-{location}/{neighb}/")
     if results.status_code == 200:
         return results.content
     else:
         print(f"Could not retrieve the page contents for {location} and {neighb}! HTTP Status code {results.status_code}!")
         return None
+
     
-def retrieve_flat_prices(html_content):
+def retrieve_flat_prices(html_content: str) -> dict:
     """
     @param html_content: A HTML string object with from the invest komfort website
     @return: A dictionary with number of rooms as keys, and a tuple of (min_price, max_price) as values
@@ -40,49 +42,6 @@ def retrieve_flat_prices(html_content):
             prices[room] = (price_range, price_range)
     return prices
   
-  
-
-class CityPrices:
-    
-    def __init__(self, location: str, available_neighbs: list):
-        """Object holding price data for date as of today
-
-        Args:
-            location (str): Name of the city within the Tricity area (Gdynia/Gdańsk/Sopot)
-            available_neighbs (list): List holding strings with names of different neighbourhoods built by InvestKomfort
-        """
-
-        self.location = location
-        self.neighbs = available_neighbs
-        self.data = {}
-        
-    def get_prices(self):
-        """Update the data attribute to hold pricing data"""
-        results = {}
-        for neighb in self.neighbs:
-            if neighb:
-                now = datetime.datetime.now().strftime('%Y-%m-%d')
-                html_content = get_page_content(self.location, neighb)
-                if html_content:
-                    prices = retrieve_flat_prices(html_content)
-                    results[neighb] = NeighbourhoodPrices(now, neighb,prices)
-                else:
-                    print(f"Removing {neighb} from the list - could not retrieve information from the website for this neighbourhood")
-                    self.neighbs.remove(neighb)
-            else:
-                self.neighbs.remove(neighb)
-        self.data[now] = results
-        
-    def update_prices(self,date, neighb_list):
-        self.data[date] = neighb_list
-        
-        
-    def to_df(self):
-        if self.data:
-            for date, neighbs_dict in self.data.items():
-                results = [pd.DataFrame(data=neighb.to_dict()) for name,neighb in neighbs_dict.items()]
-            return pd.concat(results)
-        
 
 class NeighbourhoodPrices:
     
@@ -126,7 +85,7 @@ class NeighbourhoodPrices:
         return results
         
         
-    def to_dict(self):
+    def to_dict(self) -> dict:
         results = {"Neighbourhood": [self.name] * len(self.rooms),
                    "Date": [self.date] * len(self.rooms),
                    "Rooms": self.rooms,
@@ -139,7 +98,55 @@ class NeighbourhoodPrices:
     def to_df(self) -> pd.DataFrame:
         """Generates a pandas dataframe with prices for the neighbourhood"""
         return pd.DataFrame(data=self.to_dict())
+       
+
+
+class CityPrices:
+    
+    def __init__(self, location: str, available_neighbs: list):
+        """Object holding price data for date as of today
+
+        Args:
+            location (str): Name of the city within the Tricity area (Gdynia/Gdańsk/Sopot)
+            available_neighbs (list): List holding strings with names of different neighbourhoods built by InvestKomfort
+        """
+
+        self.location = location
+        self.neighbs = available_neighbs
+        self.data = {}
         
+    def get_prices(self):
+        """Update the data attribute to hold pricing data"""
+        results = {}
+        for neighb in self.neighbs:
+            if neighb:
+                now = datetime.datetime.now().strftime('%Y-%m-%d')
+                html_content = get_page_content(self.location, neighb)
+                if html_content:
+                    prices = retrieve_flat_prices(html_content)
+                    results[neighb] = NeighbourhoodPrices(now, neighb,prices)
+                else:
+                    print(f"Removing {neighb} from the list - could not retrieve information from the website for this neighbourhood")
+                    self.neighbs.remove(neighb)
+            else:
+                self.neighbs.remove(neighb)
+        self.data[now] = results
+        
+    def update_prices(self,date: datetime.datetime, neighb_list: NeighbourhoodPrices):
+        self.data[date] = neighb_list
+        
+    def __iter__(self):
+        if self.data:
+            for key, neighb_data in self.data.items():
+                yield neighb_data
+        
+    def to_df(self):
+        if self.data:
+            for date, neighbs_dict in self.data.items():
+                results = [pd.DataFrame(data=neighb.to_dict()) for name,neighb in neighbs_dict.items()]
+            return pd.concat(results)
+        
+ 
 def load_data():
     """Saves a pandas dataframe to a local pickle file"""
     filename = 'price_data.pkl'
@@ -166,20 +173,8 @@ def main():
 
     new_data  = pd.concat([gdynia.to_df(),sopot.to_df(),gdansk.to_df()]).reset_index().drop(columns="index")
     print('Collected the data!')
-
-    try:
-        prev_data = load_data()
-    except:
-        prev_data = None
-
-    if prev_data:
-        final_results = pd.concat([prev_data,new_data]).reset_index().drop(columns='index').drop_duplicates()
-    else:
-        final_results = new_data
-    save_data(final_results)
-
-    #no = NeighbourhoodPrices(datetime.datetime(2021,8,1),"nowe-orlowo",retrieve_flat_prices(x))
-
+    print(new_data)
+    save_data(new_data)
 
 if __name__ == '__main__':
     main()
