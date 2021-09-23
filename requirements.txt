@@ -1,0 +1,4 @@
+bs4==0.0.1
+pandas==1.1.5
+requests==2.18.4
+requests-unixsocket==0.1.5
